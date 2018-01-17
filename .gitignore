@@ -12,3 +12,10 @@
 
 # Project-local glide cache, RE: https://github.com/Masterminds/glide/issues/736
 .glide/
+
+# Ignore the binary
+mensabot
+
+# Ignore all config files (except the example)
+*.toml
+!example.toml
