@@ -361,7 +361,7 @@ func (bot *mensabot) handleCommand(post *model.Post) {
 	} else if matched, _ := regexp.MatchString(`(?:^|\W)((l|L)egend(|e))(?:$|\W)`, post.Message); matched {
 		// If you see any word matching 'lengend' write legend
 		bot.writeLegend(post.ChannelId, post.Id)
-	} else if matched, _ := regexp.MatchString(`(?:^|\W)((c|C)ommmand|(h|H)elp)(?:$|\W)`, post.Message); matched {
+	} else if matched, _ := regexp.MatchString(`(?:^|\W)((c|C)ommand|(h|H)elp)(?:$|\W)`, post.Message); matched {
 		// If you see any word matching 'command' or 'help' write available commands
 		bot.writeCommands(post.ChannelId, post.Id)
 	} else {
