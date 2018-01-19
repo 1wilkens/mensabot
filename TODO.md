@@ -6,3 +6,5 @@
 - Code cleanup
     - Error handling (in combination with logging)
     - Idioms (e.g. `go` routine + `select {}`)
+    - Extract messages into constants
+    - Move canteen to config file

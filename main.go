@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -23,15 +24,20 @@ const (
 	CANTEEN_URL_TOMORROW = "http://speiseplan.studierendenwerk-hamburg.de/de/580/2018/99/"
 )
 
+var REG_EXP_STATUS *regexp.Regexp = regexp.MustCompile(`(?i)(?:^|\W)(alive|running|up)(?:$|\W)`)
+var REG_EXP_TODAY *regexp.Regexp = regexp.MustCompile(`(?i)(?:^|\W)(heute|today|hunger)(?:$|\W)`)
+var REG_EXP_TOMORROW *regexp.Regexp = regexp.MustCompile(`(?i)(?:^|\W)(morgen|tomorrow)(?:$|\W)`)
+var REG_EXP_LEGEND *regexp.Regexp = regexp.MustCompile(`(?i)(?:^|\W)(legend(|e)|zusatzstoff(|e)|nummer(|n))(?:$|\W)`)
+var REG_EXP_HELP *regexp.Regexp = regexp.MustCompile(`(?i)(?:^|\W)(command(|s)|help)(?:$|\W)`)
+
 type config struct {
 	MattermostApiURL string
 	MattermostWsURL  string
 	UserEmail        string
 	UserPassword     string
-	TeamName         string
 
+	TeamName    string
 	DisplayName string
-	MentionName string
 
 	ChannelNameDebug      string
 	ChannelNameProduction string
@@ -290,7 +296,7 @@ func (bot *mensabot) handleWebSocketEvent(event *model.WebSocketEvent) {
 		return
 	}
 
-	fmt.Printf("[bot::handleWebSocketEvent] Handling event: %v\n", event)
+	fmt.Printf("[bot::handleWebSocketEvent] Handling event: %+v\n", event)
 
 	// We only care about new posts
 	if event.Event != model.WEBSOCKET_EVENT_POSTED {
@@ -304,8 +310,17 @@ func (bot *mensabot) handleWebSocketEvent(event *model.WebSocketEvent) {
 			return
 		}
 
-		if strings.HasPrefix(post.Message, CONFIG.MentionName) {
-			bot.handleCommand(post)
+		mention, ok := event.Data["mentions"].(string)
+		if ok {
+			// We have some mentions, check if we are one of them
+			var mentions []string
+			json.Unmarshal([]byte(mention), &mentions)
+			for _, m := range mentions {
+				if m == bot.user.Id {
+					bot.handleCommand(post)
+					return
+				}
+			}
 		} else if event.Broadcast.ChannelId == bot.channelDebug.Id {
 			bot.handleCommand(post)
 		}
@@ -334,39 +349,73 @@ func (bot *mensabot) writeLegend(channelID string, replyToID string) {
 		":pig2: = Enthält Schweinefleisch\n" +
 		":fish: = Enthält Fisch\n" +
 		":rooster: = Enthält Geflügel\n" +
-		":milk_glass: = Laktose**freies**(!) Gericht\n"
+		":milk_glass: = Laktose**freies**(!) Gericht\n\n" +
+		"**Zusatzstoffe:**\n" +
+		"1 = Farbstoffe\n" +
+		"2 = Konservierungsstoffe\n" +
+		"3 = Antioxidationsmittel\n" +
+		"4 = Geschmacksverstärker\n" +
+		"5 = Geschwefelt\n" +
+		"6 = Geschwärzt\n" +
+		"7 = Gewachst\n" +
+		"8 = Phosphat\n" +
+		"9 = Süßungsmittel\n" +
+		"10 = Phenylalaninquelle\n" +
+		"14 = enthält glutenhaltiges Getreide (z. B. Weizen, Roggen, Gerste etc.)\n" +
+		"15 = Krebstiere und Krebstiererzeugnisse\n" +
+		"16 = Ei und Eierzeugnisse\n" +
+		"17 = Fisch und Fischerzeugnisse\n" +
+		"18 = Erdnüsse und Erdnusserzeugnisse\n" +
+		"19 = Soja und Sojaerzeugnisse\n" +
+		"20 = Milch und Milcherzeugnisse (einschl. Laktose)\n" +
+		"21 = Schalenfrüchte (z.B. Mandel, Haselnüsse, Walnuss etc.)\n" +
+		"22 = Sellerie und Sellerieerzeugnisse\n" +
+		"23 = Senf und Senferzeugnisse\n" +
+		"24 = Sesamsamen und Sesamsamenerzeugnisse\n" +
+		"25 = Schwefeldioxid und Sulfite (Konzentration über 10mg/kg oder 10mg/l)\n" +
+		"26 = Lupine und - erzeugnisse\n" +
+		"27 = Mollusken/Weichtiere (z.B. Muscheln und Weinbergschnecken)\n"
 
 	bot.sendMessage(msg, channelID, replyToID)
 }
 
-func (bot *mensabot) writeCommands(channelID string, replyToID string) {
-	bot.sendMessage("TODO: Implement commands..", channelID, replyToID)
+func (bot *mensabot) writeHelp(channelID string, replyToID string) {
+	msg := "**Need help?** These are my supported commands:\n\n" +
+		"| Command | Keyword(s) (completely case insensitive)|\n" +
+		"| -- | -- |\n" +
+		"| Status | alive, running, up |\n" +
+		"| Today's canteen plan | heute, today, hunger |\n" +
+		"| Tomorrow's canteen plan | morgen, tomorrow |\n" +
+		"| Legend | legend(e), zusatzstoff(e), nummer(n) |\n" +
+		"| This help message | command(s), help |\n"
+
+	bot.sendMessage(msg, channelID, replyToID)
 }
 
 func (bot *mensabot) handleCommand(post *model.Post) {
 	println("Handling post: " + post.Message)
 
-	if matched, _ := regexp.MatchString(`(?:^|\W)((a|A)live|(r|R)unning|(u|U)p)(?:$|\W)`, post.Message); matched {
+	if REG_EXP_STATUS.MatchString(post.Message) {
 		// If you see any word matching 'alive'/'running'/'up' then respond with status
 		bot.sendMessage("Yes I'm up and running!", post.ChannelId, post.Id)
 		return
-	} else if matched, _ := regexp.MatchString(`(?:^|\W)((h|H)eute|(t|T)oday)(?:$|\W)`, post.Message); matched {
-		// If you see any word matching 'heute' or 'today' post today's canteen plan
+	} else if REG_EXP_TODAY.MatchString(post.Message) {
+		// If you see any word matching 'heute', 'today' or 'hunger', post today's canteen plan
 		dishes := getCanteenPlan(CANTEEN_URL_TODAY)
 		bot.writeDishes(dishes, "**Heute gibt es:**", post.ChannelId, post.Id)
-	} else if matched, _ := regexp.MatchString(`(?:^|\W)((m|M)orgen|(t|T)omorrow)(?:$|\W)`, post.Message); matched {
-		// If you see any word matching 'morgen' or 'tomorrow' post tomorrow's canteen plan
+	} else if REG_EXP_TOMORROW.MatchString(post.Message) {
+		// If you see any word matching 'morgen' or 'tomorrow', post tomorrow's canteen plan
 		dishes := getCanteenPlan(CANTEEN_URL_TOMORROW)
 		bot.writeDishes(dishes, "**Morgen gibt es:**", post.ChannelId, post.Id)
-	} else if matched, _ := regexp.MatchString(`(?:^|\W)((l|L)egend(|e))(?:$|\W)`, post.Message); matched {
-		// If you see any word matching 'lengend' write legend
+	} else if REG_EXP_LEGEND.MatchString(post.Message) {
+		// If you see any word matching 'legend(e)', 'zusatzstoff(e)', 'inhaltsstoff(e)' or 'nummer(n)', post legend
 		bot.writeLegend(post.ChannelId, post.Id)
-	} else if matched, _ := regexp.MatchString(`(?:^|\W)((c|C)ommand|(h|H)elp)(?:$|\W)`, post.Message); matched {
-		// If you see any word matching 'command' or 'help' write available commands
-		bot.writeCommands(post.ChannelId, post.Id)
+	} else if REG_EXP_HELP.MatchString(post.Message) {
+		// If you see any word matching 'command' or 'help', post available commands
+		bot.writeHelp(post.ChannelId, post.Id)
 	} else {
-		// If nothing matched return a generic message
-		bot.sendMessage("What does this even mean?!", post.ChannelId, post.Id)
+		// If nothing matched post a generic message
+		bot.sendMessage("**What does this even mean?!** (Type 'help' to get a list of available commands)", post.ChannelId, post.Id)
 	}
 }
 

@@ -5,7 +5,6 @@ UserPassword = "hunter2"
 TeamName = "myteam"
 
 DisplayName = "MensaBot"
-MentionName = "@mensabot"
 
 ChannelNameDebug = "mensabot_debug"
 ChannelNameProduction = "mensabot"
