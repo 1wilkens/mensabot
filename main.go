@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"net/http"
 	"os"
 	"os/signal"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/burntsushi/toml"
 	"github.com/mattermost/mattermost-server/model"
@@ -18,17 +20,19 @@ import (
 )
 
 const (
-	VERSION = "v0.1"
+	VERSION = "v0.3"
 
 	CANTEEN_URL_TODAY    = "http://speiseplan.studierendenwerk-hamburg.de/de/580/2018/0/"
 	CANTEEN_URL_TOMORROW = "http://speiseplan.studierendenwerk-hamburg.de/de/580/2018/99/"
 )
 
 var REG_EXP_STATUS *regexp.Regexp = regexp.MustCompile(`(?i)(?:^|\W)(alive|running|up)(?:$|\W)`)
+var REG_EXP_HELP *regexp.Regexp = regexp.MustCompile(`(?i)(?:^|\W)(command(|s)|help)(?:$|\W)`)
+var REG_EXP_LEGEND *regexp.Regexp = regexp.MustCompile(`(?i)(?:^|\W)(legend(|e)|zusatzstoff(|e)|nummer(|n))(?:$|\W)`)
+
 var REG_EXP_TODAY *regexp.Regexp = regexp.MustCompile(`(?i)(?:^|\W)(heute|today|hunger)(?:$|\W)`)
 var REG_EXP_TOMORROW *regexp.Regexp = regexp.MustCompile(`(?i)(?:^|\W)(morgen|tomorrow)(?:$|\W)`)
-var REG_EXP_LEGEND *regexp.Regexp = regexp.MustCompile(`(?i)(?:^|\W)(legend(|e)|zusatzstoff(|e)|nummer(|n))(?:$|\W)`)
-var REG_EXP_HELP *regexp.Regexp = regexp.MustCompile(`(?i)(?:^|\W)(command(|s)|help)(?:$|\W)`)
+var REG_EXP_THANKS *regexp.Regexp = regexp.MustCompile(`(?i)(?:^|\W)(dank(|e)|thank(|s))(?:$|\W)`)
 
 type config struct {
 	MattermostApiURL string
@@ -296,7 +300,8 @@ func (bot *mensabot) handleWebSocketEvent(event *model.WebSocketEvent) {
 		return
 	}
 
-	fmt.Printf("[bot::handleWebSocketEvent] Handling event: %+v\n", event)
+	// This is for debugging purposes
+	//fmt.Printf("[bot::handleWebSocketEvent] Handling event: %+v\n", event)
 
 	// We only care about new posts
 	if event.Event != model.WEBSOCKET_EVENT_POSTED {
@@ -315,6 +320,11 @@ func (bot *mensabot) handleWebSocketEvent(event *model.WebSocketEvent) {
 			// We have some mentions, check if we are one of them
 			var mentions []string
 			json.Unmarshal([]byte(mention), &mentions)
+			println(len(mentions))
+			if len(mentions) > 3 {
+				// More than 3 mentions is probably @all or @channel, skip those
+				return
+			}
 			for _, m := range mentions {
 				if m == bot.user.Id {
 					bot.handleCommand(post)
@@ -392,9 +402,15 @@ func (bot *mensabot) writeHelp(channelID string, replyToID string) {
 	bot.sendMessage(msg, channelID, replyToID)
 }
 
-func (bot *mensabot) handleCommand(post *model.Post) {
-	println("Handling post: " + post.Message)
+func (bot *mensabot) writeMyPleasure(channelID string, replyToID string) {
+	var msgs = [...]string{"My pleasure", "You are very welcome", "Dafür nicht", "Immer gern"}
 
+	idx := rand.Intn(len(msgs))
+
+	bot.sendMessage(msgs[idx], channelID, replyToID)
+}
+
+func (bot *mensabot) handleCommand(post *model.Post) {
 	if REG_EXP_STATUS.MatchString(post.Message) {
 		// If you see any word matching 'alive'/'running'/'up' then respond with status
 		bot.sendMessage("Yes I'm up and running!", post.ChannelId, post.Id)
@@ -413,18 +429,21 @@ func (bot *mensabot) handleCommand(post *model.Post) {
 	} else if REG_EXP_HELP.MatchString(post.Message) {
 		// If you see any word matching 'command' or 'help', post available commands
 		bot.writeHelp(post.ChannelId, post.Id)
+	} else if REG_EXP_THANKS.MatchString(post.Message) {
+		bot.writeMyPleasure(post.ChannelId, post.Id)
 	} else {
 		// If nothing matched post a generic message
 		bot.sendMessage("**What does this even mean?!** (Type 'help' to get a list of available commands)", post.ChannelId, post.Id)
 	}
 }
 
-func readConfig() {
+func initialize() {
 	if len(os.Args) < 2 {
 		println("ERROR: MensaBot expects the configuration file as first argument!")
 		os.Exit(1)
 	}
 
+	// Parse config
 	cfgFile := os.Args[1]
 	_, err := os.Stat(cfgFile)
 	if err != nil {
@@ -434,10 +453,13 @@ func readConfig() {
 	if _, err := toml.DecodeFile(cfgFile, &CONFIG); err != nil {
 		panic(err)
 	}
+
+	// Initialize rand
+	rand.Seed(time.Now().Unix())
 }
 
 func main() {
-	readConfig()
+	initialize()
 
 	bot := newMensaBotFromConfig(&CONFIG)
 	go bot.startListening()
