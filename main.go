@@ -26,13 +26,18 @@ const (
 	CANTEEN_URL_TOMORROW = "http://speiseplan.studierendenwerk-hamburg.de/de/580/2018/99/"
 )
 
-var REG_EXP_STATUS *regexp.Regexp = regexp.MustCompile(`(?i)(?:^|\W)(alive|running|up)(?:$|\W)`)
-var REG_EXP_HELP *regexp.Regexp = regexp.MustCompile(`(?i)(?:^|\W)(command(|s)|help)(?:$|\W)`)
-var REG_EXP_LEGEND *regexp.Regexp = regexp.MustCompile(`(?i)(?:^|\W)(legend(|e)|zusatzstoff(|e)|nummer(|n))(?:$|\W)`)
+var REG_EXP_STATUS = regexp.MustCompile(`(?i)(?:^|\W)(alive|running|up)(?:$|\W)`)
+var REG_EXP_HELP = regexp.MustCompile(`(?i)(?:^|\W)(command(|s)|help)(?:$|\W)`)
+var REG_EXP_LEGEND = regexp.MustCompile(`(?i)(?:^|\W)(legend(|e)|zusatzstoff(|e)|nummer(|n))(?:$|\W)`)
 
-var REG_EXP_TODAY *regexp.Regexp = regexp.MustCompile(`(?i)(?:^|\W)(heute|today|hunger)(?:$|\W)`)
-var REG_EXP_TOMORROW *regexp.Regexp = regexp.MustCompile(`(?i)(?:^|\W)(morgen|tomorrow)(?:$|\W)`)
-var REG_EXP_THANKS *regexp.Regexp = regexp.MustCompile(`(?i)(?:^|\W)(dank(|e)|thank(|s))(?:$|\W)`)
+var REG_EXP_TODAY = regexp.MustCompile(`(?i)(?:^|\W)(heute|today|hunger)(?:$|\W)`)
+var REG_EXP_TOMORROW = regexp.MustCompile(`(?i)(?:^|\W)(morgen|tomorrow)(?:$|\W)`)
+
+var REG_EXP_ORDER = regexp.MustCompile(`^@\w+ order (?P<command>open|submit|list|close) ?(?P<content>.*)$`)
+
+//
+
+var REG_EXP_THANKS = regexp.MustCompile(`(?i)(?:^|\W)(dank(|e)|thank(|s))(?:$|\W)`)
 
 type config struct {
 	MattermostApiURL string
@@ -72,6 +77,10 @@ type mensabot struct {
 
 	channelDebug      *model.Channel
 	channelProduction *model.Channel
+
+	orderUser   string
+	orderDetail string
+	orders      map[string]string
 }
 
 func (d dish) isFavorite() bool {
@@ -320,7 +329,6 @@ func (bot *mensabot) handleWebSocketEvent(event *model.WebSocketEvent) {
 			// We have some mentions, check if we are one of them
 			var mentions []string
 			json.Unmarshal([]byte(mention), &mentions)
-			println(len(mentions))
 			if len(mentions) > 3 {
 				// More than 3 mentions is probably @all or @channel, skip those
 				return
@@ -348,6 +356,89 @@ func (bot *mensabot) writeDishes(dishes []dish, prefix string, channelID string,
 	}
 
 	bot.sendMessage(buf.String(), channelID, replyToID)
+}
+
+func (bot *mensabot) handleOrder(post *model.Post) {
+
+	var cmd string
+	var content string
+
+	groupNames := REG_EXP_ORDER.SubexpNames()
+	for _, match := range REG_EXP_ORDER.FindAllStringSubmatch(post.Message, -1) {
+		for idx, matchText := range match {
+			name := groupNames[idx]
+			if name == "command" {
+				cmd = matchText
+			} else if name == "content" {
+				content = matchText
+			}
+		}
+	}
+
+	switch cmd {
+	case "open":
+		if bot.orderDetail != "" {
+			if bot.orderUser == post.UserId {
+				bot.orderDetail = content
+				bot.sendMessage("Updated order details", post.ChannelId, post.Id)
+				break
+			}
+			bot.sendMessage("Not overwriting active order", post.ChannelId, post.Id)
+			break
+		}
+
+		user, _ := bot.client.GetUser(post.UserId, "")
+
+		bot.orderUser = post.UserId
+		bot.orderDetail = content
+		bot.orders = make(map[string]string)
+
+		msg := "Order opened by @" + user.Username + ": " + bot.orderDetail
+		bot.sendMessage(msg, post.ChannelId, post.Id)
+		break
+	case "submit":
+		if bot.orderDetail == "" {
+			bot.sendMessage("Cannot submit without active order", post.ChannelId, post.Id)
+			break
+		}
+		bot.orders[post.UserId] = strings.Replace(content, "|", "", -1)
+		break
+	case "list":
+		if bot.orderDetail == "" {
+			bot.sendMessage("Cannot list without active order", post.ChannelId, post.Id)
+			break
+		}
+		msg := "**[Active order]** " + bot.orderDetail + "\n\n"
+		msg += "| User | Order |\n"
+		msg += "| -- | -- |\n"
+		for userId, order := range bot.orders {
+			user, _ := bot.client.GetUser(userId, "")
+			msg += "| @" + user.Username + " | " + order + " |\n"
+		}
+		bot.sendMessage(msg, post.ChannelId, post.Id)
+		break
+	case "close":
+		if bot.orderDetail != "" && bot.orderUser != post.UserId {
+			user, _ := bot.client.GetUser(bot.orderUser, "")
+			msg := "Only @" + user.Username + " can close the active order"
+			bot.sendMessage(msg, post.ChannelId, post.Id)
+			break
+		}
+		if bot.orderDetail != "" {
+			msg := "**Closing** active order:\n\n"
+			msg += "| User | Order |\n"
+			msg += "| -- | -- |\n"
+			for userId, order := range bot.orders {
+				user, _ := bot.client.GetUser(userId, "")
+				msg += "| @" + user.Username + " | " + order + " |\n"
+			}
+			bot.orderDetail = ""
+			bot.orderUser = ""
+			bot.sendMessage(msg, post.ChannelId, post.Id)
+		}
+		break
+	}
+
 }
 
 func (bot *mensabot) writeLegend(channelID string, replyToID string) {
@@ -396,6 +487,7 @@ func (bot *mensabot) writeHelp(channelID string, replyToID string) {
 		"| Status | alive, running, up |\n" +
 		"| Today's canteen plan | heute, today, hunger |\n" +
 		"| Tomorrow's canteen plan | morgen, tomorrow |\n" +
+		"| Order controls | order [open, submit, list, close] |\n" +
 		"| Legend | legend(e), zusatzstoff(e), nummer(n) |\n" +
 		"| This help message | command(s), help |\n"
 
@@ -423,6 +515,8 @@ func (bot *mensabot) handleCommand(post *model.Post) {
 		// If you see any word matching 'morgen' or 'tomorrow', post tomorrow's canteen plan
 		dishes := getCanteenPlan(CANTEEN_URL_TOMORROW)
 		bot.writeDishes(dishes, "**Morgen gibt es:**", post.ChannelId, post.Id)
+	} else if REG_EXP_ORDER.MatchString(post.Message) {
+		bot.handleOrder(post)
 	} else if REG_EXP_LEGEND.MatchString(post.Message) {
 		// If you see any word matching 'legend(e)', 'zusatzstoff(e)', 'inhaltsstoff(e)' or 'nummer(n)', post legend
 		bot.writeLegend(post.ChannelId, post.Id)
