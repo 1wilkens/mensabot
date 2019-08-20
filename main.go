@@ -393,7 +393,7 @@ func (bot *mensabot) handleOrder(post *model.Post) {
 		bot.orderDetail = content
 		bot.orders = make(map[string]string)
 
-		msg := "Order opened by @" + user.Username + ": " + bot.orderDetail
+		msg := "#FoodOrder opened by @" + user.Username + ": " + bot.orderDetail
 		bot.sendMessage(msg, post.ChannelId, post.Id)
 		break
 	case "submit":
