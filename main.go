@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	VERSION = "v0.3"
+	VERSION = "v0.4"
 
 	CANTEEN_URL_TODAY    = "http://speiseplan.studierendenwerk-hamburg.de/de/580/2018/0/"
 	CANTEEN_URL_TOMORROW = "http://speiseplan.studierendenwerk-hamburg.de/de/580/2018/99/"
@@ -42,8 +42,7 @@ var REG_EXP_THANKS = regexp.MustCompile(`(?i)(?:^|\W)(dank(|e)|thank(|s))(?:$|\W
 type config struct {
 	MattermostApiURL string
 	MattermostWsURL  string
-	UserEmail        string
-	UserPassword     string
+	AuthToken        string
 
 	TeamName    string
 	DisplayName string
@@ -202,11 +201,10 @@ func newMensaBotFromConfig(cfg *config) (bot *mensabot) {
 
 	bot.setupGracefulShutdown()
 	bot.ensureServerIsRunning()
-	bot.loginAsBotUser(cfg.UserEmail, cfg.UserPassword)
+	bot.loginAsBotUser(cfg.AuthToken)
 	bot.setTeam(cfg.TeamName)
 
-	// WebSocket client needs the AuthToken from bot::loginAsBotUser
-	if wsClient, err := model.NewWebSocketClient4(cfg.MattermostWsURL, client.AuthToken); err != nil {
+	if wsClient, err := model.NewWebSocketClient4(cfg.MattermostWsURL, bot.client.AuthToken); err != nil {
 		println("[newMensaBotFromConfig] Failed to connect to the web socket")
 		printError(err)
 		panic(err)
@@ -245,13 +243,15 @@ func (bot *mensabot) ensureServerIsRunning() {
 	}
 }
 
-func (bot *mensabot) loginAsBotUser(email string, password string) {
-	if user, resp := bot.client.Login(email, password); resp.Error != nil {
+func (bot *mensabot) loginAsBotUser(token string) {
+	bot.client.AuthToken = token
+	bot.client.AuthType = model.HEADER_TOKEN
+	if user, resp := bot.client.GetMe(""); resp.Error != nil {
 		println("There was a problem logging into the Mattermost server.")
 		printError(resp.Error)
 		panic(resp.Error)
 	} else {
-		println("[bot::loginAsBotUser] Logged in as user '" + email + "': " + user.Id)
+		println("[bot::loginAsBotUser] Logged in as user '" + user.GetFullName() + "': " + user.Id)
 		bot.user = user
 	}
 }

@@ -1,7 +1,6 @@
 MattermostApiURL = "https://mattermost.example.com"
 MattermostWsURL = "wss://mattermost.example.com"
-UserEmail = "mensabot@mattermost.example.com"
-UserPassword = "hunter2"
+AuthToken = "<token>"
 TeamName = "myteam"
 
 DisplayName = "MensaBot"
