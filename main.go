@@ -262,7 +262,6 @@ func (bot *mensabot) setTeam(teamName string) {
 	} else {
 		println("[bot::setTeam] Got team with name '" + teamName + "`: " + team.Id)
 		bot.team = team
-		bot.SetTeamId(team.Id)
 	}
 }
 
