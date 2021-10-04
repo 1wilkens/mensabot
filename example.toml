@@ -5,7 +5,6 @@ TeamName = "myteam"
 
 DisplayName = "MensaBot"
 
-ChannelNameDebug = "mensabot_debug"
-ChannelNameProduction = "mensabot"
+ChannelNameDebug = "mattermost-testing"
 
 Favorites = ["burger"]

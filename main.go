@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/burntsushi/toml"
-	"github.com/mattermost/mattermost-server/model"
+	"github.com/BurntSushi/toml"
+	"github.com/mattermost/mattermost-server/v5/model"
 	"github.com/yhat/scrape"
 	"golang.org/x/net/html"
 	"golang.org/x/net/html/atom"
@@ -75,7 +75,6 @@ type mensabot struct {
 	team *model.Team
 
 	channelDebug      *model.Channel
-	channelProduction *model.Channel
 
 	orderUser   string
 	orderDetail string
@@ -213,7 +212,6 @@ func newMensaBotFromConfig(cfg *config) (bot *mensabot) {
 	}
 
 	bot.channelDebug = bot.getChannel(cfg.ChannelNameDebug)
-	bot.channelProduction = bot.getChannel(cfg.ChannelNameProduction)
 
 	return
 }
@@ -244,8 +242,7 @@ func (bot *mensabot) ensureServerIsRunning() {
 }
 
 func (bot *mensabot) loginAsBotUser(token string) {
-	bot.client.AuthToken = token
-	bot.client.AuthType = model.HEADER_TOKEN
+	bot.client.SetToken(token)
 	if user, resp := bot.client.GetMe(""); resp.Error != nil {
 		println("There was a problem logging into the Mattermost server.")
 		printError(resp.Error)
@@ -265,6 +262,7 @@ func (bot *mensabot) setTeam(teamName string) {
 	} else {
 		println("[bot::setTeam] Got team with name '" + teamName + "`: " + team.Id)
 		bot.team = team
+		bot.SetTeamId(team.Id)
 	}
 }
 
