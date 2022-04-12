@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
+	"github.com/PuerkitoBio/goquery"
 	"github.com/mattermost/mattermost-server/v5/model"
 	"github.com/yhat/scrape"
 	"golang.org/x/net/html"
@@ -24,6 +25,8 @@ const (
 
 	CANTEEN_URL_TODAY    = "http://speiseplan.studierendenwerk-hamburg.de/de/580/2018/0/"
 	CANTEEN_URL_TOMORROW = "http://speiseplan.studierendenwerk-hamburg.de/de/580/2018/99/"
+
+	CANTEEN_URL_MAFIASI = "https://mensa.mafiasi.de"
 )
 
 var REG_EXP_STATUS = regexp.MustCompile(`(?i)(?:^|\W)(alive|running|up)(?:$|\W)`)
@@ -51,6 +54,10 @@ type config struct {
 	ChannelNameProduction string
 
 	Favorites []string
+
+	useMafiasiMensa   bool
+	canteenIdToday    string
+	canteenIdTomorrow string
 }
 
 var CONFIG config
@@ -74,7 +81,7 @@ type mensabot struct {
 	user *model.User
 	team *model.Team
 
-	channelDebug      *model.Channel
+	channelDebug *model.Channel
 
 	orderUser   string
 	orderDetail string
@@ -129,6 +136,15 @@ func trimNodeName(name string) (trimmed string) {
 	trimmed = strings.Replace(trimmed, " ,", ",", -1)
 	trimmed = strings.Replace(trimmed, "  ", " ", -1)
 
+	return
+}
+
+func replaceNonNumeric(replace string) (replaced string) {
+	reg, err := regexp.Compile("[^0-9,]+")
+	if err != nil {
+		//fuck it
+	}
+	replaced = reg.ReplaceAllString(replace, "")
 	return
 }
 
@@ -190,6 +206,37 @@ func getCanteenPlan(url string) (dishes []dish) {
 	}
 
 	return
+}
+
+func getCanteenPlanMafiasi(url string, idString string, isToday bool) (dishes []dish) {
+	res, err := http.Get(url)
+	if err != nil {
+		fmt.Println(err)
+	}
+	defer res.Body.Close()
+
+	doc, err := goquery.NewDocumentFromReader(res.Body)
+	if err != nil {
+		fmt.Println(err)
+	}
+	doc.Find("div[id='" + idString + "']").Each(func(i int, s *goquery.Selection) {
+		s.Find("tr.dish-row").Each(func(j int, ss *goquery.Selection) {
+			if isToday {
+				priceStudent := replaceNonNumeric(ss.Find("td:nth-child(4)").First().Text())
+				priceWorker := replaceNonNumeric(ss.Find("td:nth-child(5)").First().Text())
+				name := trimNodeName(ss.Find("td:nth-child(6)").First().Text())
+				prices := [3]string{priceStudent, priceWorker, "?"}
+				dishes = append(dishes, dish{name, prices, false, false, false, false, false, false, false})
+			} else {
+				priceStudent := replaceNonNumeric(ss.Find("td:nth-child(2)").First().Text())
+				priceWorker := replaceNonNumeric(ss.Find("td:nth-child(3)").First().Text())
+				name := trimNodeName(ss.Find("td:nth-child(4)").First().Text())
+				prices := [3]string{priceStudent, priceWorker, ""}
+				dishes = append(dishes, dish{name, prices, false, false, false, false, false, false, false})
+			}
+		})
+	})
+	return dishes
 }
 
 func newMensaBotFromConfig(cfg *config) (bot *mensabot) {
@@ -506,11 +553,23 @@ func (bot *mensabot) handleCommand(post *model.Post) {
 		return
 	} else if REG_EXP_TODAY.MatchString(post.Message) {
 		// If you see any word matching 'heute', 'today' or 'hunger', post today's canteen plan
-		dishes := getCanteenPlan(CANTEEN_URL_TODAY)
+
+		var dishes []dish
+		if !CONFIG.useMafiasiMensa {
+			dishes = getCanteenPlan(CANTEEN_URL_TODAY)
+		} else {
+			dishes = getCanteenPlanMafiasi(CANTEEN_URL_MAFIASI, CONFIG.canteenIdToday, true)
+		}
+
 		bot.writeDishes(dishes, "**Heute gibt es:**", post.ChannelId, post.Id)
 	} else if REG_EXP_TOMORROW.MatchString(post.Message) {
 		// If you see any word matching 'morgen' or 'tomorrow', post tomorrow's canteen plan
-		dishes := getCanteenPlan(CANTEEN_URL_TOMORROW)
+		var dishes []dish
+		if !CONFIG.useMafiasiMensa {
+			dishes = getCanteenPlan(CANTEEN_URL_TOMORROW)
+		} else {
+			dishes = getCanteenPlanMafiasi(CANTEEN_URL_MAFIASI, CONFIG.canteenIdTomorrow, false)
+		}
 		bot.writeDishes(dishes, "**Morgen gibt es:**", post.ChannelId, post.Id)
 	} else if REG_EXP_ORDER.MatchString(post.Message) {
 		bot.handleOrder(post)
@@ -565,4 +624,16 @@ func printError(err *model.AppError) {
 	println("\t\t" + err.Message)
 	println("\t\t" + err.Id)
 	println("\t\t" + err.DetailedError)
+}
+
+func printDishes(dishes []dish) {
+	var buf bytes.Buffer
+
+	buf.WriteString("\n\n")
+	buf.WriteString("| Essen | Features | Preise |\n")
+	buf.WriteString("| -- | -- | -- |\n")
+	for _, d := range dishes {
+		buf.WriteString(d.String() + "\n")
+	}
+	fmt.Println(buf.String())
 }

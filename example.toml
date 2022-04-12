@@ -8,3 +8,7 @@ DisplayName = "MensaBot"
 ChannelNameDebug = "mattermost-testing"
 
 Favorites = ["burger"]
+
+useMafiasiMensa = true
+canteenIdToday = "canteen-0-10"
+canteenIdTomorrow = "canteen-99-10"
