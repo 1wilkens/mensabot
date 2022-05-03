@@ -233,7 +233,7 @@ func getCanteenPlanMafiasi(url string, idString string, isToday bool) (dishes []
 					priceStudent := replaceNonNumeric(ss.Find("td:nth-child(2)").First().Text())
 					priceWorker := replaceNonNumeric(ss.Find("td:nth-child(3)").First().Text())
 					name := trimNodeName(ss.Find("td:nth-child(4)").First().Text())
-					prices := [3]string{priceStudent, priceWorker, ""}
+					prices := [3]string{priceStudent, priceWorker, "?"}
 					dishes = append(dishes, dish{name, prices, false, false, false, false, false, false, false})
 				}
 			}
