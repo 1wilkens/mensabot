@@ -221,18 +221,21 @@ func getCanteenPlanMafiasi(url string, idString string, isToday bool) (dishes []
 	}
 	doc.Find("div[id='" + idString + "']").Each(func(i int, s *goquery.Selection) {
 		s.Find("tr.dish-row").Each(func(j int, ss *goquery.Selection) {
-			if isToday {
-				priceStudent := replaceNonNumeric(ss.Find("td:nth-child(4)").First().Text())
-				priceWorker := replaceNonNumeric(ss.Find("td:nth-child(5)").First().Text())
-				name := trimNodeName(ss.Find("td:nth-child(6)").First().Text())
-				prices := [3]string{priceStudent, priceWorker, "?"}
-				dishes = append(dishes, dish{name, prices, false, false, false, false, false, false, false})
-			} else {
-				priceStudent := replaceNonNumeric(ss.Find("td:nth-child(2)").First().Text())
-				priceWorker := replaceNonNumeric(ss.Find("td:nth-child(3)").First().Text())
-				name := trimNodeName(ss.Find("td:nth-child(4)").First().Text())
-				prices := [3]string{priceStudent, priceWorker, ""}
-				dishes = append(dishes, dish{name, prices, false, false, false, false, false, false, false})
+			if ss.Find("td.deprecated").Length() == 0 {
+				if isToday {
+					priceStudent := replaceNonNumeric(ss.Find("td:nth-child(4)").First().Text())
+					priceWorker := replaceNonNumeric(ss.Find("td:nth-child(5)").First().Text())
+					name := trimNodeName(ss.Find("td:nth-child(6)").First().Text())
+					prices := [3]string{priceStudent, priceWorker, "?"}
+					dishes = append(dishes, dish{name, prices, false, false, false, false, false, false, false})
+
+				} else {
+					priceStudent := replaceNonNumeric(ss.Find("td:nth-child(2)").First().Text())
+					priceWorker := replaceNonNumeric(ss.Find("td:nth-child(3)").First().Text())
+					name := trimNodeName(ss.Find("td:nth-child(4)").First().Text())
+					prices := [3]string{priceStudent, priceWorker, "?"}
+					dishes = append(dishes, dish{name, prices, false, false, false, false, false, false, false})
+				}
 			}
 		})
 	})
