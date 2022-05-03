@@ -55,9 +55,9 @@ type config struct {
 
 	Favorites []string
 
-	useMafiasiMensa   bool
-	canteenIdToday    string
-	canteenIdTomorrow string
+	UseMafiasiMensa   bool
+	CanteenIdToday    string
+	CanteenIdTomorrow string
 }
 
 var CONFIG config
@@ -555,20 +555,20 @@ func (bot *mensabot) handleCommand(post *model.Post) {
 		// If you see any word matching 'heute', 'today' or 'hunger', post today's canteen plan
 
 		var dishes []dish
-		if !CONFIG.useMafiasiMensa {
+		if !CONFIG.UseMafiasiMensa {
 			dishes = getCanteenPlan(CANTEEN_URL_TODAY)
 		} else {
-			dishes = getCanteenPlanMafiasi(CANTEEN_URL_MAFIASI, CONFIG.canteenIdToday, true)
+			dishes = getCanteenPlanMafiasi(CANTEEN_URL_MAFIASI, CONFIG.CanteenIdToday, true)
 		}
 
 		bot.writeDishes(dishes, "**Heute gibt es:**", post.ChannelId, post.Id)
 	} else if REG_EXP_TOMORROW.MatchString(post.Message) {
 		// If you see any word matching 'morgen' or 'tomorrow', post tomorrow's canteen plan
 		var dishes []dish
-		if !CONFIG.useMafiasiMensa {
+		if !CONFIG.UseMafiasiMensa {
 			dishes = getCanteenPlan(CANTEEN_URL_TOMORROW)
 		} else {
-			dishes = getCanteenPlanMafiasi(CANTEEN_URL_MAFIASI, CONFIG.canteenIdTomorrow, false)
+			dishes = getCanteenPlanMafiasi(CANTEEN_URL_MAFIASI, CONFIG.CanteenIdTomorrow, false)
 		}
 		bot.writeDishes(dishes, "**Morgen gibt es:**", post.ChannelId, post.Id)
 	} else if REG_EXP_ORDER.MatchString(post.Message) {
