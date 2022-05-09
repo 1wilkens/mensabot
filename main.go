@@ -125,7 +125,13 @@ func (d dish) String() string {
 		buf.WriteString(" :milk_glass:")
 	}
 	buf.WriteString(" |")
-	buf.WriteString(fmt.Sprintf(" %s // %s // %s |", d.prices[0], d.prices[1], d.prices[2]))
+
+	if len(d.prices[2]) != 0 {
+		buf.WriteString(fmt.Sprintf(" %s // %s // %s |", d.prices[0], d.prices[1], d.prices[2]))
+	} else {
+		buf.WriteString(fmt.Sprintf(" %s // %s |", d.prices[0], d.prices[1])) // mafiasi only has 2 prices
+	}
+
 	return buf.String()
 }
 
@@ -222,19 +228,29 @@ func getCanteenPlanMafiasi(url string, idString string, isToday bool) (dishes []
 	doc.Find("div[id='" + idString + "']").Each(func(i int, s *goquery.Selection) {
 		s.Find("tr.dish-row").Each(func(j int, ss *goquery.Selection) {
 			if ss.Find("td.deprecated").Length() == 0 {
+				features := ss.Find("td:nth-child(1)").First().Text()
+				var isVegetarian = false
+				var isVegan = false
+				if strings.Contains(features, "veget") {
+					isVegetarian = true
+				}
+				if strings.Contains(features, "vegan") {
+					isVegan = true
+				}
+
 				if isToday {
 					priceStudent := replaceNonNumeric(ss.Find("td:nth-child(4)").First().Text())
 					priceWorker := replaceNonNumeric(ss.Find("td:nth-child(5)").First().Text())
 					name := trimNodeName(ss.Find("td:nth-child(6)").First().Text())
-					prices := [3]string{priceStudent, priceWorker, "?"}
-					dishes = append(dishes, dish{name, prices, false, false, false, false, false, false, false})
+					prices := [3]string{priceStudent, priceWorker, ""}
+					dishes = append(dishes, dish{name, prices, isVegetarian, isVegan, false, false, false, false, false})
 
 				} else {
 					priceStudent := replaceNonNumeric(ss.Find("td:nth-child(2)").First().Text())
 					priceWorker := replaceNonNumeric(ss.Find("td:nth-child(3)").First().Text())
 					name := trimNodeName(ss.Find("td:nth-child(4)").First().Text())
-					prices := [3]string{priceStudent, priceWorker, "?"}
-					dishes = append(dishes, dish{name, prices, false, false, false, false, false, false, false})
+					prices := [3]string{priceStudent, priceWorker, ""}
+					dishes = append(dishes, dish{name, prices, isVegetarian, isVegan, false, false, false, false, false})
 				}
 			}
 		})
