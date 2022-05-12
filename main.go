@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"math/rand"
 	"net/http"
 	"os"
@@ -13,7 +14,6 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
-	"github.com/PuerkitoBio/goquery"
 	"github.com/mattermost/mattermost-server/v5/model"
 	"github.com/yhat/scrape"
 	"golang.org/x/net/html"
@@ -26,7 +26,8 @@ const (
 	CANTEEN_URL_TODAY    = "http://speiseplan.studierendenwerk-hamburg.de/de/580/2018/0/"
 	CANTEEN_URL_TOMORROW = "http://speiseplan.studierendenwerk-hamburg.de/de/580/2018/99/"
 
-	CANTEEN_URL_MAFIASI = "https://mensa.mafiasi.de"
+	CANTEEN_URL_MAFIASI_TODAY    = "https://mensa.mafiasi.de/api/canteens/{0}/today/"
+	CANTEEN_URL_MAFIASI_TOMORROW = "https://mensa.mafiasi.de/api/canteens/{0}/tomorrow/"
 )
 
 var REG_EXP_STATUS = regexp.MustCompile(`(?i)(?:^|\W)(alive|running|up)(?:$|\W)`)
@@ -55,9 +56,8 @@ type config struct {
 
 	Favorites []string
 
-	UseMafiasiMensa   bool
-	CanteenIdToday    string
-	CanteenIdTomorrow string
+	UseMafiasiMensa  bool
+	CanteenIdMafiasi string
 }
 
 var CONFIG config
@@ -86,6 +86,16 @@ type mensabot struct {
 	orderUser   string
 	orderDetail string
 	orders      map[string]string
+}
+
+type jsondish struct {
+	Date       string `json:"date"`
+	Name       string `json:"dish"`
+	Vegetarian bool   `json:"vegetarian"`
+	Vegan      bool   `json:"vegan"`
+	Price      string `json:"price"`
+	PriceStaff string `json:"price_staff"`
+	Canteen    int    `json:"canteen"`
 }
 
 func (d dish) isFavorite() bool {
@@ -214,47 +224,31 @@ func getCanteenPlan(url string) (dishes []dish) {
 	return
 }
 
-func getCanteenPlanMafiasi(url string, idString string, isToday bool) (dishes []dish) {
+func getCanteenPlanMafiasi(url string, idString string) (dishes []dish) {
+
+	url = strings.Replace(url, "{0}", idString, 1)
+
 	res, err := http.Get(url)
 	if err != nil {
 		fmt.Println(err)
 	}
 	defer res.Body.Close()
 
-	doc, err := goquery.NewDocumentFromReader(res.Body)
+	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
-		fmt.Println(err)
+		panic(err)
 	}
-	doc.Find("div[id='" + idString + "']").Each(func(i int, s *goquery.Selection) {
-		s.Find("tr.dish-row").Each(func(j int, ss *goquery.Selection) {
-			if ss.Find("td.deprecated").Length() == 0 {
-				features := ss.Find("td:nth-child(1)").First().Text()
-				var isVegetarian = false
-				var isVegan = false
-				if strings.Contains(features, "veget") {
-					isVegetarian = true
-				}
-				if strings.Contains(features, "vegan") {
-					isVegan = true
-				}
+	var data []jsondish
 
-				if isToday {
-					priceStudent := replaceNonNumeric(ss.Find("td:nth-child(4)").First().Text())
-					priceWorker := replaceNonNumeric(ss.Find("td:nth-child(5)").First().Text())
-					name := trimNodeName(ss.Find("td:nth-child(6)").First().Text())
-					prices := [3]string{priceStudent, priceWorker, ""}
-					dishes = append(dishes, dish{name, prices, isVegetarian, isVegan, false, false, false, false, false})
+	err = json.Unmarshal(body, &data)
+	if err != nil {
+		panic(err)
+	}
 
-				} else {
-					priceStudent := replaceNonNumeric(ss.Find("td:nth-child(2)").First().Text())
-					priceWorker := replaceNonNumeric(ss.Find("td:nth-child(3)").First().Text())
-					name := trimNodeName(ss.Find("td:nth-child(4)").First().Text())
-					prices := [3]string{priceStudent, priceWorker, ""}
-					dishes = append(dishes, dish{name, prices, isVegetarian, isVegan, false, false, false, false, false})
-				}
-			}
-		})
-	})
+	for _, current := range data {
+		prices := [3]string{current.Price, current.PriceStaff, ""}
+		dishes = append(dishes, dish{current.Name, prices, current.Vegetarian, current.Vegan, false, false, false, false, false})
+	}
 	return dishes
 }
 
@@ -577,7 +571,7 @@ func (bot *mensabot) handleCommand(post *model.Post) {
 		if !CONFIG.UseMafiasiMensa {
 			dishes = getCanteenPlan(CANTEEN_URL_TODAY)
 		} else {
-			dishes = getCanteenPlanMafiasi(CANTEEN_URL_MAFIASI, CONFIG.CanteenIdToday, true)
+			dishes = getCanteenPlanMafiasi(CANTEEN_URL_MAFIASI_TODAY, CONFIG.CanteenIdMafiasi)
 		}
 
 		bot.writeDishes(dishes, "**Heute gibt es:**", post.ChannelId, post.Id)
@@ -587,7 +581,7 @@ func (bot *mensabot) handleCommand(post *model.Post) {
 		if !CONFIG.UseMafiasiMensa {
 			dishes = getCanteenPlan(CANTEEN_URL_TOMORROW)
 		} else {
-			dishes = getCanteenPlanMafiasi(CANTEEN_URL_MAFIASI, CONFIG.CanteenIdTomorrow, false)
+			dishes = getCanteenPlanMafiasi(CANTEEN_URL_MAFIASI_TOMORROW, CONFIG.CanteenIdMafiasi)
 		}
 		bot.writeDishes(dishes, "**Morgen gibt es:**", post.ChannelId, post.Id)
 	} else if REG_EXP_ORDER.MatchString(post.Message) {

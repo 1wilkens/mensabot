@@ -10,5 +10,4 @@ ChannelNameDebug = "mattermost-testing"
 Favorites = ["burger"]
 
 UseMafiasiMensa = true
-CanteenIdToday = "canteen-0-10"
-CanteenIdTomorrow = "canteen-99-10"
+CanteenIdMafiasi = "10"
